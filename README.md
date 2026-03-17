@@ -8,6 +8,17 @@ Web interface for managing [Caddy Server](https://caddyserver.com/) reverse prox
 
 [Report Bug](https://github.com/fuomag9/caddy-proxy-manager/issues) • [Request Feature](https://github.com/fuomag9/caddy-proxy-manager/issues)
 
+## Fork Differences
+
+This fork carries a few operational changes on top of the original repository.
+
+- The default deployment flow is local-image based instead of pulling prebuilt upstream images.
+- [tools/build.sh](/home/bschooley/local-dev/caddy-proxy-manager-http/tools/build.sh) builds the `web` and `caddy` images locally with `--no-cache` and tags them as `caddy-proxy-manager-web:local-build` and `caddy-proxy-manager-caddy:local-build`.
+- The build script only pushes to a registry when `--registry` is provided, for example `./tools/build.sh --registry registry.llm.lan:5000`.
+- [docker-compose.yml](/home/bschooley/local-dev/caddy-proxy-manager-http/docker-compose.yml) is the active local-compose file and expects those local `local-build` image tags.
+- [docker-compose.original.yml](/home/bschooley/local-dev/caddy-proxy-manager-http/docker-compose.original.yml) preserves the original upstream-style compose file with the previous image and build configuration.
+- This fork also adds global and per-host control over HTTP to HTTPS redirects and automatic public certificate issuance, including HTTP-only hosts when automatic public cert automation is disabled and no explicit certificate is selected.
+
 <img width="100%" alt="Dashboard" src="site/assets/screenshots/dashboard-main.png" />
 
 ## Overview

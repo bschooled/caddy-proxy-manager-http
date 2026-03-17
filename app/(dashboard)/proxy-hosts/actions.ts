@@ -7,6 +7,7 @@ import {
   createProxyHost,
   deleteProxyHost,
   updateProxyHost,
+  type ProxyHostAutomaticHttpsConfig,
   type ProxyHostAuthentikInput,
   type LoadBalancerInput,
   type LoadBalancingPolicy,
@@ -32,7 +33,7 @@ async function validateAndSanitizeCertificateId(
   certificateId: number | null,
   cloudflareConfigured: boolean
 ): Promise<{ certificateId: number | null; warning?: string }> {
-  // null is valid (Caddy Auto)
+  // null is valid (automatic public certificate management)
   if (certificateId === null) {
     return { certificateId: null };
   }
@@ -45,15 +46,25 @@ async function validateAndSanitizeCertificateId(
     let warning: string;
 
     if (!cloudflareConfigured) {
-      warning = `Certificate ID ${certificateId} not found. Automatically using 'Managed by Caddy (Auto)'. Note: Without Cloudflare DNS integration, wildcard certificates require port 80 to be accessible for HTTP-01 challenges. Configure Cloudflare in Settings to enable DNS-01 challenges.`;
+      warning = `Certificate ID ${certificateId} not found. Falling back to automatic public certificate management. Without Cloudflare DNS integration, wildcard certificates require port 80 to be accessible for HTTP-01 challenges. Configure Cloudflare in Settings to enable DNS-01 challenges.`;
     } else {
-      warning = `Certificate ID ${certificateId} not found. Automatically using 'Managed by Caddy (Auto)' which will provision certificates automatically using Caddy.`;
+      warning = `Certificate ID ${certificateId} not found. Falling back to automatic public certificate management.`;
     }
 
     return { certificateId: null, warning };
   }
 
   return { certificateId };
+}
+
+function parseAutomaticHttpsConfig(formData: FormData): ProxyHostAutomaticHttpsConfig | undefined {
+  if (!formData.has("disable_public_cert_automation_present")) {
+    return undefined;
+  }
+
+  return {
+    disable_certs: parseCheckbox(formData.get("disable_public_cert_automation"))
+  };
 }
 
 function parseAuthentikConfig(formData: FormData): ProxyHostAuthentikInput | undefined {
@@ -459,6 +470,7 @@ export async function createProxyHostAction(
         enabled: parseCheckbox(formData.get("enabled")),
         custom_pre_handlers_json: parseOptionalText(formData.get("custom_pre_handlers_json")),
         custom_reverse_proxy_json: parseOptionalText(formData.get("custom_reverse_proxy_json")),
+        automatic_https: parseAutomaticHttpsConfig(formData),
         authentik: parseAuthentikConfig(formData),
         load_balancer: parseLoadBalancerConfig(formData),
         dns_resolver: parseDnsResolverConfig(formData),
@@ -473,7 +485,7 @@ export async function createProxyHostAction(
 
     // Return success with warning if applicable
     if (warning) {
-      return actionSuccess(`Proxy host created using Caddy Auto certificate management. ${warning}`);
+      return actionSuccess(`Proxy host created using automatic public certificate management. ${warning}`);
     }
     return actionSuccess("Proxy host created and queued for Caddy reload.");
   } catch (error) {
@@ -524,6 +536,7 @@ export async function updateProxyHostAction(
         access_list_id: formData.has("access_list_id")
           ? parseAccessListId(formData.get("access_list_id"))
           : undefined,
+        ssl_forced: boolField("ssl_forced"),
         hsts_subdomains: boolField("hsts_subdomains"),
         skip_https_hostname_validation: boolField("skip_https_hostname_validation"),
         enabled: boolField("enabled"),
@@ -533,6 +546,7 @@ export async function updateProxyHostAction(
         custom_reverse_proxy_json: formData.has("custom_reverse_proxy_json")
           ? parseOptionalText(formData.get("custom_reverse_proxy_json"))
           : undefined,
+        automatic_https: parseAutomaticHttpsConfig(formData),
         authentik: parseAuthentikConfig(formData),
         load_balancer: parseLoadBalancerConfig(formData),
         dns_resolver: parseDnsResolverConfig(formData),
@@ -547,7 +561,7 @@ export async function updateProxyHostAction(
 
     // Return success with warning if applicable
     if (warning) {
-      return actionSuccess(`Proxy host updated using Caddy Auto certificate management. ${warning}`);
+      return actionSuccess(`Proxy host updated using automatic public certificate management. ${warning}`);
     }
     return actionSuccess("Proxy host updated.");
   } catch (error) {

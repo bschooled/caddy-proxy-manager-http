@@ -41,6 +41,7 @@ import {
   type GeoBlockSettings,
   type WafSettings
 } from "./settings";
+import { isProxyHostPublicCertAutomationEnabled, type ProxyHostAutomaticHttpsMeta } from "./proxy-host-automatic-https";
 import { syncInstances } from "./instance-sync";
 import {
   accessListEntries,
@@ -106,6 +107,7 @@ type UpstreamDnsResolutionMeta = {
 type ProxyHostMeta = {
   custom_reverse_proxy_json?: string;
   custom_pre_handlers_json?: string;
+  automatic_https?: ProxyHostAutomaticHttpsMeta;
   authentik?: ProxyHostAuthentikMeta;
   load_balancer?: LoadBalancerMeta;
   dns_resolver?: DnsResolverMeta;
@@ -113,6 +115,7 @@ type ProxyHostMeta = {
   geoblock?: GeoBlockSettings;
   geoblock_mode?: GeoBlockMode;
   waf?: WafHostConfig;
+  mtls?: MtlsConfig;
 };
 
 type ProxyHostAuthentikMeta = {
@@ -472,7 +475,11 @@ async function resolveUpstreamDials(
   };
 }
 
-function collectCertificateUsage(rows: ProxyHostRow[], certificates: Map<number, CertificateRow>) {
+function collectCertificateUsage(
+  rows: ProxyHostRow[],
+  certificates: Map<number, CertificateRow>,
+  globalPublicCertAutomationEnabled: boolean
+) {
   const usage = new Map<number, CertificateUsage>();
   const autoManagedDomains = new Set<string>();
 
@@ -487,11 +494,18 @@ function collectCertificateUsage(rows: ProxyHostRow[], certificates: Map<number,
       continue;
     }
 
-    // Handle auto-managed certificates (certificate_id is null)
-    if (!row.certificate_id) {
+    if (isProxyHostPublicCertAutomationEnabled({
+      certificateId: row.certificate_id,
+      meta: row.meta,
+      globalPublicCertAutomationEnabled
+    })) {
       for (const domain of filteredDomains) {
         autoManagedDomains.add(domain);
       }
+      continue;
+    }
+
+    if (row.certificate_id == null) {
       continue;
     }
 
@@ -609,6 +623,8 @@ type BuildProxyRoutesOptions = {
   globalUpstreamDnsResolutionSettings: UpstreamDnsResolutionSettings | null;
   globalGeoBlock?: GeoBlockSettings | null;
   globalWaf?: WafSettings | null;
+  globalHttpsRedirectsEnabled: boolean;
+  globalPublicCertAutomationEnabled: boolean;
 };
 
 async function buildProxyRoutes(
@@ -624,11 +640,16 @@ async function buildProxyRoutes(
       continue;
     }
 
-    // Allow hosts with certificate_id = null (Caddy Auto) or with valid certificate IDs
-    const isAutoManaged = !row.certificate_id;
+    const isAutoManaged = isProxyHostPublicCertAutomationEnabled({
+      certificateId: row.certificate_id,
+      meta: row.meta,
+      globalPublicCertAutomationEnabled: options.globalPublicCertAutomationEnabled
+    });
     const hasValidCertificate = row.certificate_id && tlsReadyCertificates.has(row.certificate_id);
+    const hostHasTls = Boolean(isAutoManaged || hasValidCertificate);
+    const canServeHttpOnly = row.certificate_id == null && !isAutoManaged;
 
-    if (!isAutoManaged && !hasValidCertificate) {
+    if (!hostHasTls && !canServeHttpOnly) {
       continue;
     }
 
@@ -665,7 +686,7 @@ async function buildProxyRoutes(
       handlers.unshift(buildWafHandler(effectiveWaf, Boolean(row.allow_websocket)));
     }
 
-    if (row.hsts_enabled) {
+    if (row.hsts_enabled && hostHasTls) {
       const value = row.hsts_subdomains ? "max-age=63072000; includeSubDomains" : "max-age=63072000";
       handlers.push({
         handler: "headers",
@@ -677,7 +698,7 @@ async function buildProxyRoutes(
       });
     }
 
-    if (row.ssl_forced) {
+    if (row.ssl_forced && hostHasTls && options.globalHttpsRedirectsEnabled) {
       for (const domainGroup of domainGroups) {
         hostRoutes.push({
           match: [
@@ -1142,8 +1163,14 @@ function buildTlsConnectionPolicies(
 async function buildTlsAutomation(
   usage: Map<number, CertificateUsage>,
   autoManagedDomains: Set<string>,
-  options: { acmeEmail?: string; dnsSettings?: DnsSettings | null }
+  options: { acmeEmail?: string; dnsSettings?: DnsSettings | null; publicCertAutomationEnabled: boolean }
 ) {
+  if (!options.publicCertAutomationEnabled) {
+    return {
+      managedCertificateIds: new Set<number>()
+    };
+  }
+
   const managedEntries = Array.from(usage.values()).filter(
     (entry) => entry.certificate.type === "managed" && Boolean(entry.certificate.auto_renew)
   );
@@ -1394,7 +1421,6 @@ async function buildCaddyDocument() {
     }
   }
 
-  const { usage: certificateUsage, autoManagedDomains } = collectCertificateUsage(proxyHostRows, certificateMap);
   const [generalSettings, dnsSettings, upstreamDnsResolutionSettings, globalGeoBlock, globalWaf] = await Promise.all([
     getGeneralSettings(),
     getDnsSettings(),
@@ -1402,9 +1428,17 @@ async function buildCaddyDocument() {
     getGeoBlockSettings(),
     getWafSettings()
   ]);
+  const globalHttpsRedirectsEnabled = generalSettings?.httpsRedirectsEnabled ?? true;
+  const globalPublicCertAutomationEnabled = generalSettings?.publicCertAutomationEnabled ?? true;
+  const { usage: certificateUsage, autoManagedDomains } = collectCertificateUsage(
+    proxyHostRows,
+    certificateMap,
+    globalPublicCertAutomationEnabled
+  );
   const { tlsApp, managedCertificateIds } = await buildTlsAutomation(certificateUsage, autoManagedDomains, {
     acmeEmail: generalSettings?.acmeEmail,
-    dnsSettings
+    dnsSettings,
+    publicCertAutomationEnabled: globalPublicCertAutomationEnabled
   });
   const { policies: tlsConnectionPolicies, readyCertificates, importedCertPems } = buildTlsConnectionPolicies(
     certificateUsage,
@@ -1424,7 +1458,9 @@ async function buildCaddyDocument() {
       globalDnsSettings: dnsSettings,
       globalUpstreamDnsResolutionSettings: upstreamDnsResolutionSettings,
       globalGeoBlock,
-      globalWaf
+      globalWaf,
+      globalHttpsRedirectsEnabled,
+      globalPublicCertAutomationEnabled
     }
   );
 
@@ -1447,9 +1483,10 @@ async function buildCaddyDocument() {
     servers.cpm = {
       listen: hasTls ? [":80", ":443"] : [":80"],
       routes: httpRoutes,
-      // Only disable automatic HTTPS if we have TLS automation policies
-      // This allows Caddy to handle HTTP-01 challenges for managed certificates
-      ...(tlsApp ? {} : { automatic_https: { disable: true } }),
+      automatic_https: {
+        disable_redirects: true,
+        disable_certs: true
+      },
       ...(hasTls ? { tls_connection_policies: tlsConnectionPolicies } : {}),
       // Enable access logging if configured
       ...(loggingEnabled ? { logs: { default_logger_name: "http_access" } } : {})

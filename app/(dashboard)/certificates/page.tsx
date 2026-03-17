@@ -1,12 +1,14 @@
 import { X509Certificate } from 'node:crypto';
 import db from '@/src/lib/db';
 import { proxyHosts, certificates } from '@/src/lib/db/schema';
-import { isNull, isNotNull, count } from 'drizzle-orm';
+import { isNull, isNotNull } from 'drizzle-orm';
 import { requireAdmin } from '@/src/lib/auth';
 import CertificatesClient from './CertificatesClient';
 import { scanAcmeCerts } from '@/src/lib/acme-certs';
 import { listCaCertificates, type CaCertificate } from '@/src/lib/models/ca-certificates';
 import { listIssuedClientCertificates, type IssuedClientCertificate } from '@/src/lib/models/issued-client-certificates';
+import { getGeneralSettings } from '@/src/lib/settings';
+import { isProxyHostPublicCertAutomationEnabled } from '@/src/lib/proxy-host-automatic-https';
 
 export type { CaCertificate };
 export type { IssuedClientCertificate };
@@ -85,33 +87,29 @@ export default async function CertificatesPage({ searchParams }: PageProps) {
   await requireAdmin();
   const { page: pageParam } = await searchParams;
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
-  const offset = (page - 1) * PER_PAGE;
   const acmeCertMap = scanAcmeCerts();
 
-  const [caCerts, issuedClientCerts] = await Promise.all([
+  const [general, caCerts, issuedClientCerts] = await Promise.all([
+    getGeneralSettings(),
     listCaCertificates(),
     listIssuedClientCertificates()
   ]);
+  const globalPublicCertAutomationEnabled = general?.publicCertAutomationEnabled ?? true;
 
-  const [acmeRows, acmeTotal, certRows, usageRows] = await Promise.all([
+  const [acmeRowsRaw, certRows, usageRows] = await Promise.all([
     db
       .select({
         id: proxyHosts.id,
         name: proxyHosts.name,
         domains: proxyHosts.domains,
+        meta: proxyHosts.meta,
+        certificateId: proxyHosts.certificateId,
         sslForced: proxyHosts.sslForced,
         enabled: proxyHosts.enabled,
       })
       .from(proxyHosts)
       .where(isNull(proxyHosts.certificateId))
-      .orderBy(proxyHosts.name)
-      .limit(PER_PAGE)
-      .offset(offset),
-    db
-      .select({ value: count() })
-      .from(proxyHosts)
-      .where(isNull(proxyHosts.certificateId))
-      .then(([r]) => r?.value ?? 0),
+      .orderBy(proxyHosts.name),
     db.select().from(certificates),
     db
       .select({
@@ -124,7 +122,18 @@ export default async function CertificatesPage({ searchParams }: PageProps) {
       .where(isNotNull(proxyHosts.certificateId)),
   ]);
 
-  const acmeHosts: AcmeHost[] = acmeRows.map(r => {
+  const acmeRows = acmeRowsRaw.filter((row) =>
+    isProxyHostPublicCertAutomationEnabled({
+      certificateId: row.certificateId,
+      meta: row.meta,
+      globalPublicCertAutomationEnabled
+    })
+  );
+  const acmeTotal = acmeRows.length;
+  const offset = (page - 1) * PER_PAGE;
+  const pagedAcmeRows = acmeRows.slice(offset, offset + PER_PAGE);
+
+  const acmeHosts: AcmeHost[] = pagedAcmeRows.map(r => {
     const domains = JSON.parse(r.domains) as string[];
     let certInfo = null;
     for (const domain of domains) {

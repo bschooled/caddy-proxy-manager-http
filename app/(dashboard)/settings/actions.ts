@@ -45,7 +45,9 @@ export async function updateGeneralSettingsAction(_prevState: ActionResult | nul
     }
     await saveGeneralSettings({
       primaryDomain: String(formData.get("primaryDomain") ?? ""),
-      acmeEmail: formData.get("acmeEmail") ? String(formData.get("acmeEmail")) : undefined
+      acmeEmail: formData.get("acmeEmail") ? String(formData.get("acmeEmail")) : undefined,
+      httpsRedirectsEnabled: formData.get("httpsRedirectsEnabled") === "on",
+      publicCertAutomationEnabled: formData.get("publicCertAutomationEnabled") === "on"
     });
     await syncInstances();
     revalidatePath("/settings");

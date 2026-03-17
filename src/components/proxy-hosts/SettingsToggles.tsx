@@ -4,7 +4,7 @@ import type { SwitchProps } from "@mui/material";
 import { useState } from "react";
 
 type ToggleSetting = {
-    name: "hsts_subdomains" | "skip_https_hostname_validation";
+    name: "ssl_forced" | "hsts_subdomains" | "skip_https_hostname_validation";
     label: string;
     description: string;
     defaultChecked: boolean;
@@ -12,17 +12,20 @@ type ToggleSetting = {
 };
 
 type SettingsTogglesProps = {
+    sslForced?: boolean;
     hstsSubdomains?: boolean;
     skipHttpsValidation?: boolean;
     enabled?: boolean;
 };
 
 export function SettingsToggles({
+    sslForced = true,
     hstsSubdomains = false,
     skipHttpsValidation = false,
     enabled = true
 }: SettingsTogglesProps) {
     const [values, setValues] = useState({
+        ssl_forced: sslForced,
         hsts_subdomains: hstsSubdomains,
         skip_https_hostname_validation: skipHttpsValidation,
         enabled: enabled
@@ -37,6 +40,13 @@ export function SettingsToggles({
     };
 
     const settings: ToggleSetting[] = [
+        {
+            name: "ssl_forced",
+            label: "Force HTTPS",
+            description: "Redirect HTTP requests to HTTPS when TLS is available for this host",
+            defaultChecked: values.ssl_forced,
+            color: "primary"
+        },
         {
             name: "hsts_subdomains",
             label: "HSTS Subdomains",

@@ -13,6 +13,8 @@ import SecurityIcon from "@mui/icons-material/Security";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import { ReactNode } from "react";
 import { getAnalyticsSummary } from "@/src/lib/analytics-db";
+import { getGeneralSettings } from "@/src/lib/settings";
+import { isProxyHostPublicCertAutomationEnabled } from "@/src/lib/proxy-host-automatic-https";
 
 type StatCard = {
   label: string;
@@ -22,11 +24,11 @@ type StatCard = {
 };
 
 async function loadStats(): Promise<StatCard[]> {
-  const [proxyHostCountResult, acmeCertCountResult, importedCertCountResult, accessListCountResult] =
+  const [general, proxyHostCountResult, autoCertCandidates, importedCertCountResult, accessListCountResult] =
     await Promise.all([
+      getGeneralSettings(),
       db.select({ value: count() }).from(proxyHosts),
-      // Proxy hosts with no explicit cert → Caddy auto-issues one ACME cert per host
-      db.select({ value: count() }).from(proxyHosts).where(isNull(proxyHosts.certificateId)),
+      db.select({ certificateId: proxyHosts.certificateId, meta: proxyHosts.meta }).from(proxyHosts).where(isNull(proxyHosts.certificateId)),
       // Imported certs with actual PEM data (valid, user-managed)
       db.select({ value: count() }).from(certificates).where(
         sql`${certificates.type} = 'imported' AND ${certificates.certificatePem} IS NOT NULL`
@@ -34,7 +36,15 @@ async function loadStats(): Promise<StatCard[]> {
       db.select({ value: count() }).from(accessLists)
     ]);
   const proxyHostsCount = proxyHostCountResult[0]?.value ?? 0;
-  const certificatesCount = (acmeCertCountResult[0]?.value ?? 0) + (importedCertCountResult[0]?.value ?? 0);
+  const globalPublicCertAutomationEnabled = general?.publicCertAutomationEnabled ?? true;
+  const acmeCertCount = autoCertCandidates.filter((row) =>
+    isProxyHostPublicCertAutomationEnabled({
+      certificateId: row.certificateId,
+      meta: row.meta,
+      globalPublicCertAutomationEnabled
+    })
+  ).length;
+  const certificatesCount = acmeCertCount + (importedCertCountResult[0]?.value ?? 0);
   const accessListsCount = accessListCountResult[0]?.value ?? 0;
 
   return [

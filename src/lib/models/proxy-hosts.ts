@@ -5,6 +5,7 @@ import { proxyHosts } from "../db/schema";
 import { desc, eq, count, like, or } from "drizzle-orm";
 import { type GeoBlockSettings } from "../settings";
 import { normalizeProxyHostDomains } from "../proxy-host-domains";
+import { sanitizeProxyHostAutomaticHttpsMeta } from "../proxy-host-automatic-https";
 
 const DEFAULT_AUTHENTIK_HEADERS = [
   "X-Authentik-Username",
@@ -206,9 +207,14 @@ export type MtlsConfig = {
   ca_certificate_ids: number[];
 };
 
+export type ProxyHostAutomaticHttpsConfig = {
+  disable_certs?: boolean;
+};
+
 type ProxyHostMeta = {
   custom_reverse_proxy_json?: string;
   custom_pre_handlers_json?: string;
+  automatic_https?: ProxyHostAutomaticHttpsConfig;
   authentik?: ProxyHostAuthentikMeta;
   load_balancer?: LoadBalancerMeta;
   dns_resolver?: DnsResolverMeta;
@@ -237,6 +243,7 @@ export type ProxyHost = {
   updated_at: string;
   custom_reverse_proxy_json: string | null;
   custom_pre_handlers_json: string | null;
+  automatic_https: ProxyHostAutomaticHttpsConfig | null;
   authentik: ProxyHostAuthentikConfig | null;
   load_balancer: LoadBalancerConfig | null;
   dns_resolver: DnsResolverConfig | null;
@@ -262,6 +269,7 @@ export type ProxyHostInput = {
   enabled?: boolean;
   custom_reverse_proxy_json?: string | null;
   custom_pre_handlers_json?: string | null;
+  automatic_https?: ProxyHostAutomaticHttpsConfig | null;
   authentik?: ProxyHostAuthentikInput | null;
   load_balancer?: LoadBalancerInput | null;
   dns_resolver?: DnsResolverInput | null;
@@ -515,6 +523,11 @@ function serializeMeta(meta: ProxyHostMeta | null | undefined) {
     normalized.custom_pre_handlers_json = preHandlers;
   }
 
+  const automaticHttps = sanitizeProxyHostAutomaticHttpsMeta(meta.automatic_https);
+  if (automaticHttps) {
+    normalized.automatic_https = automaticHttps;
+  }
+
   const authentik = sanitizeAuthentikMeta(meta.authentik);
   if (authentik) {
     normalized.authentik = authentik;
@@ -563,6 +576,7 @@ function parseMeta(value: string | null): ProxyHostMeta {
     return {
       custom_reverse_proxy_json: normalizeMetaValue(parsed.custom_reverse_proxy_json ?? null) ?? undefined,
       custom_pre_handlers_json: normalizeMetaValue(parsed.custom_pre_handlers_json ?? null) ?? undefined,
+      automatic_https: sanitizeProxyHostAutomaticHttpsMeta(parsed.automatic_https),
       authentik: sanitizeAuthentikMeta(parsed.authentik),
       load_balancer: sanitizeLoadBalancerMeta(parsed.load_balancer),
       dns_resolver: sanitizeDnsResolverMeta(parsed.dns_resolver),
@@ -976,6 +990,15 @@ function buildMeta(existing: ProxyHostMeta, input: Partial<ProxyHostInput>): str
     }
   }
 
+  if (input.automatic_https !== undefined) {
+    const automaticHttps = sanitizeProxyHostAutomaticHttpsMeta(input.automatic_https);
+    if (automaticHttps) {
+      next.automatic_https = automaticHttps;
+    } else {
+      delete next.automatic_https;
+    }
+  }
+
   if (input.authentik !== undefined) {
     const authentik = normalizeAuthentikInput(input.authentik, existing.authentik);
     if (authentik) {
@@ -1364,6 +1387,7 @@ function parseProxyHost(row: ProxyHostRow): ProxyHost {
     updated_at: toIso(row.updatedAt)!,
     custom_reverse_proxy_json: meta.custom_reverse_proxy_json ?? null,
     custom_pre_handlers_json: meta.custom_pre_handlers_json ?? null,
+    automatic_https: meta.automatic_https ?? null,
     authentik: hydrateAuthentik(meta.authentik),
     load_balancer: hydrateLoadBalancer(meta.load_balancer),
     dns_resolver: hydrateDnsResolver(meta.dns_resolver),
@@ -1478,6 +1502,7 @@ export async function updateProxyHost(id: number, input: Partial<ProxyHostInput>
   const existingMeta: ProxyHostMeta = {
     custom_reverse_proxy_json: existing.custom_reverse_proxy_json ?? undefined,
     custom_pre_handlers_json: existing.custom_pre_handlers_json ?? undefined,
+    ...(existing.automatic_https ? { automatic_https: existing.automatic_https } : {}),
     authentik: dehydrateAuthentik(existing.authentik),
     load_balancer: dehydrateLoadBalancer(existing.load_balancer),
     dns_resolver: dehydrateDnsResolver(existing.dns_resolver),

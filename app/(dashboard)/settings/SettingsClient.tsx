@@ -381,6 +381,29 @@ export default function SettingsClient({
               disabled={isSlave && !generalOverride}
               fullWidth
             />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  name="httpsRedirectsEnabled"
+                  defaultChecked={general?.httpsRedirectsEnabled ?? true}
+                  disabled={isSlave && !generalOverride}
+                />
+              }
+              label="Enable HTTP to HTTPS redirects globally"
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  name="publicCertAutomationEnabled"
+                  defaultChecked={general?.publicCertAutomationEnabled ?? true}
+                  disabled={isSlave && !generalOverride}
+                />
+              }
+              label="Enable automatic public certificate issuance globally"
+            />
+            <Typography variant="body2" color="text.secondary">
+              When automatic public certificate issuance is disabled, hosts without an explicit certificate are served over HTTP only.
+            </Typography>
             <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
               <Button type="submit" variant="contained">
                 Save general settings

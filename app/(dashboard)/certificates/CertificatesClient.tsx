@@ -67,8 +67,8 @@ export default function CertificatesClient({
           SSL/TLS Certificates
         </Typography>
         <Typography color="text.secondary">
-          Caddy automatically handles HTTPS certificates for all proxy hosts using Let&apos;s Encrypt.
-          Import custom certificates only when needed (internal CA, special requirements, etc.).
+          Automatic public certificate issuance is available for eligible proxy hosts and can be disabled globally or per host.
+          Import custom certificates when you need fixed or internal trust chains.
         </Typography>
       </Stack>
 

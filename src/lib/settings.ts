@@ -13,6 +13,8 @@ export type CloudflareSettings = {
 export type GeneralSettings = {
   primaryDomain: string;
   acmeEmail?: string;
+  httpsRedirectsEnabled?: boolean;
+  publicCertAutomationEnabled?: boolean;
 };
 
 export type AuthentikSettings = {

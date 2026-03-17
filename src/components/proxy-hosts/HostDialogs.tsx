@@ -1,5 +1,5 @@
 
-import { Alert, Box, MenuItem, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Checkbox, FormControlLabel, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { useFormState } from "react-dom";
 import { useEffect } from "react";
 import {
@@ -68,6 +68,7 @@ export function CreateHostDialog({
                     </Alert>
                 )}
                 <SettingsToggles
+                    sslForced={initialData?.ssl_forced ?? true}
                     hstsSubdomains={initialData?.hsts_subdomains}
                     skipHttpsValidation={initialData?.skip_https_hostname_validation}
                     enabled={true}
@@ -93,13 +94,28 @@ export function CreateHostDialog({
                 />
                 <UpstreamInput defaultUpstreams={initialData?.upstreams} />
                 <TextField select name="certificate_id" label="Certificate" defaultValue={initialData?.certificate_id ?? ""} fullWidth>
-                    <MenuItem value="">Managed by Caddy (Auto)</MenuItem>
+                    <MenuItem value="">Automatic public certificate</MenuItem>
                     {certificates.map((cert) => (
                         <MenuItem key={cert.id} value={cert.id}>
                             {cert.name}
                         </MenuItem>
                     ))}
                 </TextField>
+                <Box sx={{ mt: -1 }}>
+                    <input type="hidden" name="disable_public_cert_automation_present" value="1" />
+                    <FormControlLabel
+                        control={
+                            <Checkbox
+                                name="disable_public_cert_automation"
+                                defaultChecked={initialData?.automatic_https?.disable_certs ?? false}
+                            />
+                        }
+                        label="Disable automatic public certificate management for this host"
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                        If no explicit certificate is selected, this host will be served over HTTP only.
+                    </Typography>
+                </Box>
                 <TextField select name="access_list_id" label="Access List" defaultValue={initialData?.access_list_id ?? ""} fullWidth>
                     <MenuItem value="">None</MenuItem>
                     {accessLists.map((list) => (
@@ -181,6 +197,7 @@ export function EditHostDialog({
                     </Alert>
                 )}
                 <SettingsToggles
+                    sslForced={host.ssl_forced}
                     hstsSubdomains={host.hsts_subdomains}
                     skipHttpsValidation={host.skip_https_hostname_validation}
                     enabled={host.enabled}
@@ -197,13 +214,28 @@ export function EditHostDialog({
                 />
                 <UpstreamInput defaultUpstreams={host.upstreams} />
                 <TextField select name="certificate_id" label="Certificate" defaultValue={host.certificate_id ?? ""} fullWidth>
-                    <MenuItem value="">Managed by Caddy (Auto)</MenuItem>
+                    <MenuItem value="">Automatic public certificate</MenuItem>
                     {certificates.map((cert) => (
                         <MenuItem key={cert.id} value={cert.id}>
                             {cert.name}
                         </MenuItem>
                     ))}
                 </TextField>
+                <Box sx={{ mt: -1 }}>
+                    <input type="hidden" name="disable_public_cert_automation_present" value="1" />
+                    <FormControlLabel
+                        control={
+                            <Checkbox
+                                name="disable_public_cert_automation"
+                                defaultChecked={host.automatic_https?.disable_certs ?? false}
+                            />
+                        }
+                        label="Disable automatic public certificate management for this host"
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                        If no explicit certificate is selected, this host will be served over HTTP only.
+                    </Typography>
+                </Box>
                 <TextField select name="access_list_id" label="Access List" defaultValue={host.access_list_id ?? ""} fullWidth>
                     <MenuItem value="">None</MenuItem>
                     {accessLists.map((list) => (
