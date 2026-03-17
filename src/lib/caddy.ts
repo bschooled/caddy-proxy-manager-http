@@ -1485,7 +1485,7 @@ async function buildCaddyDocument() {
       routes: httpRoutes,
       automatic_https: {
         disable_redirects: true,
-        disable_certs: true
+        disable_certificates: true
       },
       ...(hasTls ? { tls_connection_policies: tlsConnectionPolicies } : {}),
       // Enable access logging if configured
