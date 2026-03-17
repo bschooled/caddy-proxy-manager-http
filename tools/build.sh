@@ -53,7 +53,6 @@ done
 cd "${ROOT_DIR}"
 
 docker build \
-  --no-cache \
   --build-arg "PUID=${PUID_WEB}" \
   --build-arg "PGID=${PGID_WEB}" \
   -f docker/web/Dockerfile \
@@ -61,7 +60,6 @@ docker build \
   .
 
 docker build \
-  --no-cache \
   --build-arg "PUID=${PUID_CADDY}" \
   --build-arg "PGID=${PGID_CADDY}" \
   -f docker/caddy/Dockerfile \
